@@ -1,0 +1,347 @@
+<body>
+<style>
+    html, body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+    }
+
+    canvas {
+        width: 100%;
+        height: 100%;
+    }
+</style>
+<script>
+const canvas = document.createElement('canvas')
+const ctx = canvas.getContext('2d')
+
+canvas.width = window.innerWidth
+canvas.height = window.innerHeight
+
+document.body.appendChild(canvas)
+
+const player = {
+    x: 0,
+    y: 0,
+    vy: 0
+}
+const p = player
+let obstacles = []
+let baseObstacles = []
+
+function resetObstacles () {
+    baseObstacles = []
+    let lastX = 100
+    while (baseObstacles.length < 10) {
+        const obstacle = lastX + Math.random()*120
+        lastX = obstacle
+        baseObstacles.push(obstacle)
+    }
+}
+resetObstacles()
+
+function reset () {
+    p.x = 0
+    p.y = 0
+    p.vy = 0
+
+    obstacles = baseObstacles.map(o => o)
+}
+reset()
+
+let spacedown = false
+let spacepress = false
+let slowmo = false
+let noui = false
+
+document.addEventListener('keydown', function (ev) {
+    if (ev.code === 'KeyZ' && scores.length) {
+        winner = scores[0].gen
+        spacepress = false
+    }
+    if (ev.code === 'Space') {
+        if (spacedown === false) spacepress = true
+        spacedown = true
+    }
+    if (ev.code === 'KeyS') slowmo = true
+    if (ev.code === 'KeyA') noui = true
+})
+
+document.addEventListener('keyup', function (ev) {
+    if (ev.code === 'Space') {
+        spacedown = false
+    }
+    if (ev.code === 'KeyS') slowmo = false
+    if (ev.code === 'KeyA') noui = false
+})
+
+function distancePtoP (p1, p2) {
+    return Math.abs(p1 - p2)
+}
+
+function distToObstacle (obstacle) {
+    return distancePtoP(p.x, obstacle)
+}
+
+const WIN = true
+const LOSE = false
+
+let gen = null
+let winner = null
+
+function parseGen (gen) {
+    let [positiv, negativ] = gen.split('@')
+    return [
+        positiv.split('~').map(Number),
+        negativ.split('~').map(Number)
+    ]
+}
+
+function makeGen (positiv, negativ) {
+    return [positiv.join('~'), negativ.join('~')].join('@')
+}
+
+function shouldJump () {
+    let nextObstacle = obstacles[0]
+    if (nextObstacle == null) return
+
+    let [positiv, negativ] = parseGen(gen)
+    let jump = positiv.some(point => 
+        pointCollidesObstacle(p.x + point)
+    )
+    let deny = negativ.some(point =>
+        pointCollidesObstacle(p.x + point)
+    )
+
+    return jump && !deny
+}
+
+function pointCollidesObstacle (point) {
+    return baseObstacles.some(o => distancePtoP(point, o) < 10)
+}
+
+function logic () {
+    p.x += 3
+    if (p.y === 0 && shouldJump()) {
+        // p.vy = -8
+        p.vy = -10
+    }
+    if (p.y !== 0) p.vy += 1
+    p.y += p.vy
+    if (p.y > 0) p.y = 0
+
+    let nextObstacle = obstacles[0]
+    if (nextObstacle != null && nextObstacle + 10 < p.x) {
+        obstacles.shift()
+        nextObstacle = obstacles[0]
+    }
+
+    if (nextObstacle == null && baseObstacles[9] + 50 < p.x) {
+        return [10 - obstacles.length, p.x]
+    }
+    if (distToObstacle(nextObstacle) < 10 && p.y > -10) {
+        return [10 - obstacles.length, p.x]
+    }
+
+    return undefined
+}
+
+let round = 1
+const GEN_COUNT = 50
+let gens = []
+let genHistory = []
+while (gens.length < GEN_COUNT) {
+    const positiv = []
+    const negativ = []
+    while (positiv.length < 3) positiv.push(Math.round(Math.random()*50))
+    while (negativ.length < 3) negativ.push(Math.round(Math.random()*50))
+    gens.push(makeGen(positiv, negativ))
+}
+let scores = []
+
+const MAX_OFFSET = 15
+
+function nextRound () {
+    if (winner) {
+        winner = false
+        resetObstacles()
+        genHistory = []
+        round = 1
+    } else {
+        const bestGen = scores[0].gen
+        const lastBestGen = genHistory[genHistory.length - 1]
+        if (lastBestGen == null || bestGen !== lastBestGen[1]) {
+            genHistory.push([round, bestGen, scores[0].score])
+        }
+    }
+    round++
+    while (scores.length > GEN_COUNT/5) scores.pop()
+    scores = scores.map(tuple => tuple.gen)
+    while (scores.length < GEN_COUNT) {
+        // mutations
+        const gen = scores[Math.floor(Math.random()*Math.min(GEN_COUNT/5, scores.length))]
+        let [positiv, negativ] = parseGen(gen)
+        switch (Math.floor(Math.random()*4)) {
+            case 0: 
+                let aux = negativ
+                negativ = positiv
+                positiv = negativ
+                break
+            case 1:
+                positiv = positiv.map(_ => Math.floor(Math.random()*50))
+                negativ = negativ.map(_ => Math.floor(Math.random()*50))
+                break
+            case 2:
+                const offset = Math.round(Math.random()*2*MAX_OFFSET - MAX_OFFSET)
+                positiv = positiv.map(n => n + offset)
+                negativ = negativ.map(n => n + offset)
+                break
+            case 3:
+            case 4:
+                positiv = positiv.map(n => n + Math.round(Math.random()*2*MAX_OFFSET - MAX_OFFSET))
+                negativ = negativ.map(n => n + Math.round(Math.random()*2*MAX_OFFSET - MAX_OFFSET))
+                break
+        }
+        newGen = makeGen(positiv, negativ)
+        scores.push(newGen)
+    }
+    gens = scores
+    scores = []
+    gen = gens.shift()
+}
+
+function nextGen () {
+    if (!winner) {
+        if (gens.length) {
+            gen = gens.shift()
+        } else {
+            if (scores[0].score[0] === 10) {
+                winner = scores[0].gen
+                spacepress = false
+                genHistory.push([round, winner, scores[0].score])
+            }
+            if (winner) {
+                gen = winner
+            } else nextRound()
+        }
+    } else gen = winner
+    reset()
+}
+
+function logicStep () {
+    if (gen == null) nextGen()
+    if (spacedown && !spacepress && winner) reset()
+    const result = logic()
+    if (result != null) {
+        if (winner) {
+            if (spacepress) {
+                spacepress = false
+                nextRound()
+                reset()
+            } else nextGen()
+            return
+        }
+        scores.push({
+            gen: gen,
+            score: result
+        })
+        scores.sort((o1, o2) => {
+            const [obs1, dist1] = o1.score
+            const [obs2, dist2] = o2.score
+            if (obs1 !== obs2) return obs2 - obs1
+            return dist2 - dist1
+        })
+        nextGen()
+    }
+}
+
+let k = 0
+function render () {
+    requestAnimationFrame(render)
+    if (!slowmo || k++ > 4) {
+        logicStep()
+        k = 0
+    }
+    if (spacedown) {
+        for (let i = 0; i < 200; ++i) logicStep()
+    }
+    
+    // ctx.globalAlpha = 0.2
+    ctx.fillStyle = winner ? 'lightgreen' : 'lightblue'
+    ctx.fillRect(0,0,canvas.width,canvas.height)
+    ctx.globalAlpha = 1
+
+    // gen
+    ctx.fillStyle = 'black'
+    ctx.font = '30px helvetica'
+    ctx.fillText(`current gen: ${gen}`, 10, 30)
+
+    ctx.fillText(`generation ${round}`, 10, 170)
+    ctx.fillText(`gens: ${JSON.stringify(gens)}`, 10, 200)
+    ctx.fillText(`scores:`, 10, 230)
+    scores.forEach((tuple, i) => {
+        ctx.fillText(JSON.stringify(tuple), 40, 260 + i*30)
+    })
+
+    // gen history
+    ctx.save()
+    ctx.translate(700,0)
+    ctx.fillText(`gen history`, 0, 230)
+    genHistory.forEach((tuple, i) => {
+        ctx.fillText(JSON.stringify(tuple), 30, 260 + 30*i)
+    })
+    ctx.restore()
+
+    ctx.save()
+    ctx.translate(0, 100)
+    ctx.scale(.9, .9)
+
+    // render base
+    ctx.beginPath()
+    ctx.moveTo(0, 5)
+    ctx.lineTo(1000, 5)
+    ctx.stroke()
+
+    // render obstacles
+    ctx.fillStyle = 'black'
+    for (const o of baseObstacles) {
+        ctx.fillRect(o - 5, -5, 10, 10)
+    }
+
+    // render player
+    ctx.fillStyle = 'blue'
+    ctx.fillRect(p.x - 5, p.y - 15, 10, 20)
+
+    if (!noui) {
+    // render points
+    // positive
+    const [positiv, negativ] = parseGen(gen)
+    ctx.strokeStyle = ctx.fillStyle = 'blue'
+    positiv.forEach(pos => {
+        ctx.beginPath()
+        ctx.arc(p.x + pos, 10, 2, 0, Math.PI*2)
+        ctx.stroke()
+        if (pointCollidesObstacle(p.x + pos)) {
+            ctx.fill()
+        }
+    })
+
+
+    // negativ
+    ctx.strokeStyle = ctx.fillStyle = 'red'
+    negativ.forEach(pos => {
+        ctx.beginPath()
+        ctx.arc(p.x + pos, 10, 2, 0, Math.PI*2)
+        ctx.stroke()
+        if (pointCollidesObstacle(p.x + pos)) {
+            ctx.fill()
+        }
+    })
+    }
+
+    ctx.restore()
+}
+requestAnimationFrame(render)
+</script>
+</body>
