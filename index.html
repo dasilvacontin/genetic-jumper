@@ -29,6 +29,10 @@ const player = {
 const p = player
 let obstacles = []
 let baseObstacles = []
+let trackI = 0
+let tracks = []
+const TRACK_COUNT = 10
+let score = [0, 0]
 
 function resetObstacles () {
     baseObstacles = []
@@ -39,16 +43,26 @@ function resetObstacles () {
         baseObstacles.push(obstacle)
     }
 }
-resetObstacles()
 
-function reset () {
+function resetTracks () {
+    trackI = 0
+    tracks = []
+    while (tracks.length < TRACK_COUNT) {
+        resetObstacles()
+        tracks.push(baseObstacles)
+    }
+}
+resetTracks()
+
+function resetLevel () {
     p.x = 0
     p.y = 0
     p.vy = 0
 
+    baseObstacles = tracks[trackI]
     obstacles = baseObstacles.map(o => o)
 }
-reset()
+resetLevel()
 
 let spacedown = false
 let spacepress = false
@@ -121,7 +135,7 @@ function pointCollidesObstacle (point) {
     return baseObstacles.some(o => distancePtoP(point, o) < 10)
 }
 
-function logic () {
+function levelLogic () {
     p.x += 3
     if (p.y === 0 && shouldJump()) {
         // p.vy = -8
@@ -165,8 +179,10 @@ const MAX_OFFSET = 15
 function nextRound () {
     if (winner) {
         winner = false
+        resetTracks()
         resetObstacles()
         genHistory = []
+        score = [0, 0]
         round = 1
     } else {
         const bestGen = scores[0].gen
@@ -216,7 +232,7 @@ function nextGen () {
         if (gens.length) {
             gen = gens.shift()
         } else {
-            if (scores[0].score[0] === 10) {
+            if (scores[0].score[0] === 10 * TRACK_COUNT) {
                 winner = scores[0].gen
                 spacepress = false
                 genHistory.push([round, winner, scores[0].score])
@@ -226,33 +242,46 @@ function nextGen () {
             } else nextRound()
         }
     } else gen = winner
-    reset()
+    trackI = 0
+    score = [0, 0]
+    resetLevel()
 }
 
 function logicStep () {
     if (gen == null) nextGen()
-    if (spacedown && !spacepress && winner) reset()
-    const result = logic()
+    if (spacedown && !spacepress && winner) {
+        trackI = 0
+        resetLevel()
+    }
+    const result = levelLogic()
     if (result != null) {
-        if (winner) {
-            if (spacepress) {
-                spacepress = false
-                nextRound()
-                reset()
-            } else nextGen()
-            return
+        score[0] += result[0]
+        score[1] += result[1]
+        trackI++
+        if (trackI >= TRACK_COUNT) {
+            if (winner) {
+                if (spacepress) {
+                    spacepress = false
+                    nextRound()
+                    trackI = 0
+                    resetLevel()
+                } else nextGen()
+                return
+            }
+            scores.push({
+                gen: gen,
+                score: score
+            })
+            scores.sort((o1, o2) => {
+                const [obs1, dist1] = o1.score
+                const [obs2, dist2] = o2.score
+                if (obs1 !== obs2) return obs2 - obs1
+                return dist2 - dist1
+            })
+            nextGen()
+        } else {
+            resetLevel()
         }
-        scores.push({
-            gen: gen,
-            score: result
-        })
-        scores.sort((o1, o2) => {
-            const [obs1, dist1] = o1.score
-            const [obs2, dist2] = o2.score
-            if (obs1 !== obs2) return obs2 - obs1
-            return dist2 - dist1
-        })
-        nextGen()
     }
 }
 
@@ -276,9 +305,11 @@ function render () {
     ctx.fillStyle = 'black'
     ctx.font = '30px helvetica'
     ctx.fillText(`current gen: ${gen}`, 10, 30)
+    ctx.fillText(`track i: ${trackI}`, 600, 30)
+    ctx.fillText(`score: ${JSON.stringify(score)}`, 800, 30)
 
     ctx.fillText(`generation ${round}`, 10, 170)
-    ctx.fillText(`gens: ${JSON.stringify(gens)}`, 10, 200)
+    // ctx.fillText(`gens: ${JSON.stringify(gens)}`, 10, 200)
     ctx.fillText(`scores:`, 10, 230)
     scores.forEach((tuple, i) => {
         ctx.fillText(JSON.stringify(tuple), 40, 260 + i*30)
